@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from urllib.parse import urljoin
 from urllib.parse import urlunsplit
 
@@ -12,6 +13,12 @@ from robottelo.helpers import install_katello_ca
 from robottelo.helpers import remove_katello_ca
 
 logger = logging.getLogger('robottelo')
+
+
+def setup_capsule(satellite, capsule):
+    """Given satellite and capsule instances, run the commands needed to set up the capsule"""
+    file, command = satellite.capsule_certs_generate(capsule.hostname)
+    pass
 
 
 class ContentHostError(Exception):
@@ -359,3 +366,121 @@ class ContentHost(Host):
         else:
             raise ContentHostError('No distro package available to retrieve release version')
         return self.execute(f"echo '{rh_product_os_releasever}' > /etc/yum/vars/releasever")
+
+
+class Capsule(Host):
+    def restart_services(self):
+        """Restart services, returning True if passed and stdout if not"""
+        result = self.execute('foreman-maintain service restart').status
+        return True if result.status == 0 else result.stdout
+
+    def check_services(self):
+        error_msg = 'Some services are not running'
+        result = self.execute('foreman-maintain service status')
+        if result.status == 0:
+            return True
+        for line in result.stdout.splitlines():
+            if error_msg in line:
+                return line.replace(error_msg, '').strip()
+
+    def installer(self, **extra_kwargs):
+        """General purpose installer"""
+        command = f'satellite-installer --scenario {self.__class__.__name__.lower()}'
+        extras = ' '.join(
+            [f'--{key.replace("_", "-")} {value}' for key, value in extra_kwargs.items()]
+        )
+        return self.execute(f'{command} {extras}')
+
+
+class Satellite(Capsule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._init_nailgun()
+        self._init_cli()
+        self._init_airgun()
+
+    def _init_nailgun(self):
+        """Import all nailgun entities and wrap them under self.api"""
+        from nailgun.config import ServerConfig
+        from nailgun.entity_mixins import Entity
+        from nailgun import entities
+
+        def inject_config(cls, server_config):
+            """inject a nailgun server config into the init of nailgun entity classes"""
+            import functools
+
+            class DecClass(cls):
+                __init__ = functools.partialmethod(cls.__init__, server_config=server_config)
+
+            return DecClass
+
+        # set the server configuration to point to this satellite
+        self.nailgun_cfg = ServerConfig(
+            auth=(settings.server.admin_username, settings.server.admin_password),
+            url=f'https://{self.hostname}',
+            verify=False,
+        )
+        # add each nailgun entity to self.api, injecting our server config
+        self.api = lambda: None
+        for name, obj in entities.__dict__.items():
+            try:
+                if Entity in obj.mro():
+                    setattr(self.api, name, inject_config(obj, self.nailgun_cfg))
+            except AttributeError:
+                # not everything has an mro method, we don't care about them
+                pass
+
+    def _init_cli(self):
+        """Import all robottelo cli entities and wrap them under self.cli"""
+        import importlib
+        from robottelo.cli.base import Base
+
+        self.cli = lambda: None
+        for file in Path('robottelo/cli/').iterdir():
+            if file.suffix == '.py' and not file.name.startswith('_'):
+                cli_module = importlib.import_module(f'robottelo.cli.{file.stem}')
+                for name, obj in cli_module.__dict__.items():
+                    try:
+                        if Base in obj.mro():
+                            # set our hostname as a class attribute
+                            obj.hostname = self.hostname
+                            setattr(self.cli, name, obj)
+                    except AttributeError:
+                        # not everything has an mro method, we don't care about them
+                        pass
+
+    def _init_airgun(self):
+        """Initialize an airgun Session object and store it as self.ui_session"""
+        from airgun.session import Session
+
+        def get_caller():
+            import inspect
+
+            for frame in inspect.stack():
+                if frame.function.startswith('test_'):
+                    return frame.function
+
+        self.ui_session = Session(
+            session_name=get_caller(),
+            user=settings.server.admin_username,
+            password=settings.server.admin_password,
+            hostname=self.hostname,
+        )
+
+    def capsule_certs_generate(self, capsule_fqdn, **extra_kwargs):
+        """Generate capsule certs, returning the cert path and the installer command"""
+        command = (
+            f'capsule-certs-generate --foreman-proxy-fqdn {capsule_fqdn} '
+            f'--certs-tar /root/{capsule_fqdn}-certs.tar'
+        )
+        extras = ' '.join(
+            [f'--{key.replace("_", "-")} {value}' for key, value in extra_kwargs.items()]
+        )
+        result = self.execute(f'{command} {extras}')
+        installer_command, listening = '', False
+        for line in result.stdout.splitlines():
+            if line.strip().startswith('satellite-installer'):
+                listening = True
+            if listening:
+                installer_command += ' ' + ' '.join(line.replace('\\', '').split())
+        return f'/root/{capsule_fqdn}-certs.tar', installer_command.strip()

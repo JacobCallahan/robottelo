@@ -358,31 +358,34 @@ class TestOperatingSystem:
         assert param_name == os['parameters'][0]['name']
         assert param_value == os['parameters'][0]['value']
 
-    @pytest.mark.destructive
-    @pytest.mark.skip_if_open("BZ:1649011")
-    def test_positive_os_list_with_default_organization_set(self):
-        """list operating systems when the default organization is set
 
-        :id: 2c1ba416-a5d5-4031-b154-54794569a85b
+@pytest.mark.tier2
+@pytest.mark.skip_if_open("BZ:1649011")
+def test_positive_os_list_with_default_organization_set(satellite69_latest):
+    """list operating systems when the default organization is set
 
-        :BZ: 1649011
+    :id: 2c1ba416-a5d5-4031-b154-54794569a85b
 
-        :expectedresults: os list should list operating systems when the
-            default organization is set
-        """
-        make_os()
-        os_list_before_default = OperatingSys.list()
-        assert len(os_list_before_default) > 0
-        try:
-            Defaults.add({'param-name': 'organization', 'param-value': DEFAULT_ORG})
-            result = ssh.command('hammer defaults list')
-            assert result.return_code == 0
-            assert DEFAULT_ORG in "".join(result.stdout)
-            os_list_after_default = OperatingSys.list()
-            assert len(os_list_after_default) > 0
+    :BZ: 1649011
 
-        finally:
-            Defaults.delete({'param-name': 'organization'})
-            result = ssh.command('hammer defaults list')
-            assert result.return_code == 0
-            assert DEFAULT_ORG not in "".join(result.stdout)
+    :expectedresults: os list should list operating systems when the
+        default organization is set
+    """
+    satellite69_latest.api.OperatingSystem().create()
+    os_list_before_default = satellite69_latest.cli.OperatingSys.list()
+    assert len(os_list_before_default) > 0
+    try:
+        satellite69_latest.cli.Defaults.add(
+            {'param-name': 'organization', 'param-value': DEFAULT_ORG}
+        )
+        result = satellite69_latest.execute('hammer defaults list')
+        assert result.status == 0
+        assert DEFAULT_ORG in "".join(result.stdout)
+        os_list_after_default = satellite69_latest.cli.OperatingSys.list()
+        assert len(os_list_after_default) > 0
+
+    finally:
+        satellite69_latest.cli.Defaults.delete({'param-name': 'organization'})
+        result = satellite69_latest.execute('hammer defaults list')
+        assert result.status == 0
+        assert DEFAULT_ORG not in "".join(result.stdout)
