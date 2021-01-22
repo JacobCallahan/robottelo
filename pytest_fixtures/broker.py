@@ -7,6 +7,38 @@ from robottelo.hosts import ContentHost
 from robottelo.hosts import Satellite
 
 
+@pytest.fixture(scope="session")
+def satellite_factory():
+    def factory(retry_limit=3, sleep=300, **broker_args):
+        vmb = VMBroker(host_classes={'host': Satellite}, workflow='deploy-sat-lite', **broker_args)
+        retries = 0
+        while not (sat := vmb.checkout()) and (retries < retry_limit):
+            retries += 1
+            import time
+
+            time.sleep(sleep)
+        return sat
+
+    return factory
+
+
+@pytest.fixture(scope="session")
+def capsule_factory():
+    def factory(retry_limit=3, sleep=300, **broker_args):
+        vmb = VMBroker(
+            host_classes={'host': Capsule}, workflow='deploy-sat-capsule', **broker_args
+        )
+        retries = 0
+        while not (cap := vmb.checkout()) and (retries < retry_limit):
+            retries += 1
+            import time
+
+            time.sleep(sleep)
+        return cap
+
+    return factory
+
+
 @pytest.fixture
 def rhel7_host():
     """A function-level fixture that provides a host object based on the rhel7 nick"""

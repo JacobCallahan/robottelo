@@ -1,0 +1,45 @@
+SERVER:
+  # Server hostnames, a list of one or more dns-resolvable hostnames
+  # HOSTNAMES:
+  #  - replace-with-satellite-hostname
+  #  - replace-with-satellite-hostname
+  #  - replace-with-satellite-hostname
+  VERSION:
+    # The full release version (6.9.2)
+    # RELEASE: populate with satellite version
+    # The snap version currently testing (if applicable)
+    # SNAP:
+    # The source of Satellite packages. Can be one of:
+    # internal, ga, beta
+    SOURCE: "internal"
+  # run-on-one - All xdist runners default to one satellite
+  # balance - xdist runners will be split between available satellites
+  # on-demand - any xdist runner without a satellite will have a new one provisioned.
+  XDIST-BEHAVIOR: "run-on-one"
+  # If set to True and a Satellite is needed to fill a requirement,
+  # it will be provisioned
+  ON-DEMAND: False
+  # If one or more Satellites are provisioned,
+  # this setting determines if it will be automatically checked in
+  AUTO-CHECKIN: False
+  # Path to private ssh key to be used when connecting via SSH.
+  SSH_KEY: /home/jenkins/.ssh/id_rsa
+  # HTTP scheme when building the server URL
+  # Suggested values for "scheme" are "http" and "https".
+  SCHEME: https
+  # Server port
+  PORT: 443
+  # SSH username
+  SSH_USERNAME: root
+  # SSH password if not using a SSH key to connect
+  # SSH_PASSWORD: replace-with-ssh-passwd
+  # Admin username when accessing API and UI
+  ADMIN_USERNAME: admin
+  # Admin password when accessing API and UI
+  ADMIN_PASSWORD: changeme
+
+SSH_CLIENT:
+  # Time to wait for the ssh command to finish, in seconds
+  COMMAND_TIMEOUT: 300
+  # Time to wait for establishing the ssh connection, in seconds
+  CONNECTION_TIMEOUT: 10
