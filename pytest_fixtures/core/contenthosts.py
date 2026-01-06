@@ -50,11 +50,30 @@ def host_conf(request):
 
 
 def host_post_config(hosts, config_name):
-    """A function that runs a specified post config on a list of content hosts."""
-    broker_args = settings.content_host.host_post_configs.get(config_name).to_dict()
+    """A function that runs a specified post config on a list of content hosts.
+
+    Args:
+        hosts (list): A list of ContentHost objects to run the config on.
+        config_name (str): The name of the post config to run (must be defined in settings).
+
+    The `broker_args` are retrieved from `settings.content_host.host_post_configs.<config_name>`.
+    Values in `broker_args` can contain template strings like "{host.name}", which will be
+    substituted with the actual host's attributes.
+    """
+    try:
+        post_config = settings.content_host.host_post_configs[config_name]
+    except (KeyError, AttributeError) as e:
+        raise ValueError(
+            f"Invalid post_config name: '{config_name}'. "
+            f"Available options in content_host.yaml: {list(settings.content_host.host_post_configs.keys())}"
+        ) from e
+
+    base_broker_args = post_config.to_dict()
     for host in hosts:
+        # Copy arguments to avoid modifying the base dictionary for subsequent hosts
+        broker_args = base_broker_args.copy()
         for key, val in broker_args.items():
-            if "{" in val:
+            if isinstance(val, str) and "{" in val:
                 broker_args[key] = val.format(host=host)
         Broker(**broker_args).execute()
 
@@ -392,7 +411,8 @@ def external_puppet_server(request):
 def sat_upgrade_chost(request):  # This leaks! Be sure to clean up manually.
     """A module-level fixture that provides a UBI_8 content host for upgrade scenario testing"""
     request.param = {"container_host": settings.content_host.ubi8.container.container_host}
-    return contenthost_factory(request=request)
+    with contenthost_factory(request=request) as host:
+        yield host
 
 
 @pytest.fixture
